@@ -103,6 +103,24 @@ It is easiest to upgrade the existing Qiskit infrastructure in-place if this is 
 
 We will need `PackedInstruction` to gain a slot to track the debug information, even if it's not used.
 
+### Memory use vs verbosity
+
+The two extremes of "debug info" are to track _nothing_ that links the output back to the source (like current Qiskit), and to track _every_ modification.
+Tracking every modification in full detail, including ephemeral context like collected 2q matrices, will likely explode the memory use of compilation.
+While memory use needn't be a blocker for debug-specific workflows, there is still likely many useful middle grounds.
+
+I anticipate that each compiler pass that interacts with the debug system will want to accept some argument on initialisation/run that sets its verbosity level.
+There are two places that might be affected by the level: the number of hierarchy points inserted (zero, one or perhaps more in som cases?), and the level of detail in any inserted `SourceContext`.
+A possible hierarchy of levels (assuming that a global on/off system is triggered by the presence of a `DebugContext` in the compiler pipeline):
+
+- level 0: no debugging, even if that breaks the full output consistency
+- level 1: minimal debugging information, with little-to-no source context inserted for synthetic nodes
+- level 2 (default): some reasonable information level chosen by the pass
+- level 3: every meaningful action of the compiler pass is represented in the `DebugContext`, with no concern for memory use
+
+We can decide whether these levels should be set at pass initialisation, and/or whether we should provide a `log4j`-like (Python `logging`) hierarchical configuration after construction.
+The former is more precise, the latter is easier for users to re-configure a pre-built default pipeline.
+
 ### New APIs
 
 The main APIs we'll need to add at the `DebugContext` level are:
