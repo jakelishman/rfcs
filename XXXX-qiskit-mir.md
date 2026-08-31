@@ -4,7 +4,7 @@
 |:------------------|:---------------------------------------------|
 | **RFC #**         | #### |
 | **Authors**       | Jake Lishman (jake.lishman@ibm.com) |
-| **Submitted**     | 2026-08-27 |
+| **Submitted**     | 2026-08-31 |
 
 
 ## Summary
@@ -119,28 +119,72 @@ We expect significant future expansion after implementation.
 This is intended high-level semantics of what is representable in Qiskit MIR.
 We don't get into detail of _how_ to represent this yet, only what should be possible.
 
+#### IR structure
+
+There are several top-level components to Qiskit MIR.
+These include:
+
+- The *instruction list*.
+  A linearisation of all the instructions in the circuit.
+  It supports random access, efficient insertion and removal.
+
+- A *quantum memory table*.
+  MIR supports addressing both qubits and abstract groups (see [Quantum types](#quantum-types)).
+
+  "Virtual" groups can be defined on-the-fly by passes as part of the IR, then used as single operands.
+  A quantum memory table records the overlaps of groups (approximately: which qubits are in which groups), and can contain custom metadata for each group.
+
+  We expect that one part of a future backend abstraction will be to provide a version of this table for the physical-qubit/-module layout.
+
+Notably absent here: we are not defining a control-flow graph or the concept of a "basic block" in the initial implementation.
+We expect to add structured control flow over blocks later, but it is not designed in this document.
+
 #### Quantum types
 
-*TODO*: I need to come back and finish this.  (At the moment it's risking getting too mathematical.)
-
 The quantum data model of Qiskit MIR is abstract, and designed to allow concrete high-level algorithmic languages and concrete backends to model their own semantics.
+
+MIR provides abstractions for quantum data-flow analysis that permits working with ad-hoc groups of qubits, while maintaining the linearity of individual qubits.
+It allows multiple simultaneous representations of quantum memory, so high-level algorithms can use a free-form "virtual" layout of their choosing that is progressively lowered to a concrete hardware model.
 
 We introduce two terms:
 
 - `qid`: a "quantum identifier", which refers to zero or more qubits.
-  Each `qid` is a unit that may be an instruction operand.
+  These are the operands of instructions.
 
 - address space: each `qid` is part of exactly one address space, and ecah address space contains many `qid`s.
   The two initial built-in "address spaces" are called "virtual" and "physical".
+  We may add more address spaces in the future[^1].
 
-"Qubit" is not an explicit type in Qiskit MIR instructions, but it is strongly expected that in most pipelines, each physical qubit will be assigned a `qid`.
+[^1]: Approximately, I'm expecting that we might introduce one to handle loops over qubits, or function calls that can be applied to different qubits without instantiating a new function per location.  You don't need this concept in classical computing, where one function call always has the same register uses, but the CPU-register–physical-qubit analogy doesn't hold here.
 
-An "instruction" in Qiskit MIR takes zero or more `qid`s (for quantum identifier) as arguments.
+An "instruction" in Qiskit MIR takes zero or more `qid`s as arguments.
+A `qid` has an optional "qubit width"; this defines how the built-in Pauli instructions act on it.
 A `qid` can "contain" other `qid`s.
-It is allowed and expected to have qubit overlap between different `qid`s used in the program; the set of "contained-in" relations between all `qid`s in the same address space is an arbitrary DAG.
-this allows a backend to define a "module" (for example) that contains other qubits, and have instructions that act on the entire module as a single named entity.
+"Qubit" is not an explicit data type in Qiskit MIR.
+A `qid` might directly represent a qubit or a set of qubits, however.
 
+It is allowed and expected to have qubit overlap between different `qid`s used in the program; the set of "contained-in" relations between all `qid`s in the same address space is an arbitrary DAG.
+This allows a backend to define a "module" (for example) that contains other qubits, and have instructions that act on the entire module as a single named entity.
 A Qiskit MIR program is invalid if any single instruction acts on two `qid`s that overlap.
+
+There are two (initial) "address spaces": virtual and physical.
+At any given time, a Qiskit MIR program can use a mix of virtual and physical addressing.
+An individual instruction may have a mix of virtual and physical operands.
+
+The "memory layout" of the virtual address space is a property of the IR, and transformations are allowed to add to it, including "adding" new qubits and groups.
+This is tracked in the _quantum memory table_ as part of MIR.
+
+The "memory layout" of the physical address space is a property of the target backend, not owned by an individual MIR program.
+The memory table for the physical address space will likely use the same data structure as the physical one.
+
+*TODO*:
+- define the "contains-in" relations (e.g. bit layout?), how data-flow analysis is defined, and how "overlap" is defined.
+
+
+> [!NOTE]
+> I like to think of `qid`s as similar to LLVM's modelling of virtual and CPU registers.
+> The analogy is not perfect, and do not assume that any unenumerated CPU-register semantics apply to `qid`, but it may help understand the spirit.
+
 
 #### Available instructions
 
