@@ -3,7 +3,7 @@
 | **Status**        | **Proposed/Accepted/Deprecated** |
 |:------------------|:---------------------------------------------|
 | **RFC #**         | #### |
-| **Authors**       | Jake Lishman (jake.lishman@ibm.com) |
+| **Authors**       | Jake Lishman (jake.lishman@ibm.com), Kit Barton (kbarton@ca.ibm.com) |
 | **Submitted**     | 2026-08-31 |
 
 
@@ -137,15 +137,10 @@ These include:
 
   We expect that one part of a future backend abstraction will be to provide a version of this table for the physical-qubit/-module layout.
 
-- **Classical-data symbol table**
+- **Symbol table**
 
   A data structure that links symbol identifiers to information about the symbols, such as their types, whether they are literals (and if so, with what value), and so on.
 
-  This structure contains tracking information about the definitions of each symbol.[^symbol-tracking]
-
-[^symbol-tracking]: We could add "variants" of the tracking data for classical symbols, in order to enforce different invariants, potentially at different times.
-This could, for example, allow us to _later_ have a mode where we enforce SSA form on the classical data.
-The initial draft will permit symbols to be "defined" by multiple instructions; we will not enforce SSA form nor add the corresponding `phi` operations (or alternative structure) until we have further motivation.
 
 Notably absent here: we are not defining a control-flow graph or the concept of a "basic block" in the initial implementation.
 We expect to add structured control flow over blocks later, but it is not designed in this document.
@@ -166,10 +161,17 @@ An instruction tracks four explicit components:[^instruction-parts]
 
 - **classical return**: optionally, the classical value(s) returned.
 
+
 This section does not comment on the implementation of the instruction object, just on the concepts it permits representation of.
+The quantum arguments all follow "qubit semantics" (see next section), while the classical symbol uses and the return follow the semantics of the type of value the symbol refers to.
+In this first draft, the only classical types we define have value semantics.[^memory-semantics]
+
+**TODO**: if more stuff (like Pauli strings, state-prep state, etc) moves into the argument list, revisit the motivation for the quantum-arument/classical-symbol split.
 
 [^instruction-parts]: We may want to add further metadata/annotations/whatever to individual instructions in the future.
 We need to make sure the implementation and APIs don't make this unnecessarily hard.
+[^memory-semantics]: This doesn't preclude us adding the concept of "arrays" or other references to memory in the future.
+
 
 #### Quantum types
 
@@ -178,16 +180,20 @@ The quantum data model of Qiskit MIR is abstract, and designed to allow concrete
 MIR provides abstractions for quantum data-flow analysis that permits working with ad-hoc groups of qubits, while maintaining the linearity of individual qubits.
 It allows multiple simultaneous representations of quantum memory, so high-level algorithms can use a free-form "virtual" layout of their choosing that is progressively lowered to a concrete hardware model.
 
-We introduce two terms:
+We introduce three terms:
 
-- `qid`: a "quantum identifier", which refers to zero or more qubits.
+- **qid**: a "quantum identifier", which refers to zero or more qubits.
   These are the operands of instructions.
 
-- resource space: each `qid` is part of exactly one resource space, and each address space contains many `qid`s.
+- **resource space**: each qid is part of exactly one resource space, and each resource space contains many qids.
   The two initial built-in resource spaces are called "virtual" and "physical".
   We may add more resource spaces in the future[^id-space-expansion].
 
+- **qubit semantics**: the rules for how the underlying "quantum resources" can be modified/copied by instructions.[^qubit-semnatics]
+
 [^id-space-expansion]: Approximately, I'm expecting that we might introduce one to handle loops over qubits, or function calls that can be applied to different qubits without instantiating a new function per location.  You don't need this concept in classical computing, where one function call always has the same register uses, but the CPU-register–physical-qubit analogy doesn't hold here.
+[^qubit-semantics]: We don't have a full formal specification of "qubit semantics"  yet, but it will follow.
+For now, approximately think of them as "a resource that each instruction can use at most once and cannot copy".
 
 An "instruction" in Qiskit MIR takes zero or more `qid`s as arguments.
 A `qid` has an optional "qubit width"; this defines how the built-in Pauli instructions act on it.
@@ -214,7 +220,7 @@ The memory table for the physical resource space will likely use the same data s
 
 
 > [!NOTE]
-> I like to think of `qid`s as similar to LLVM's modelling of virtual and CPU registers.
+> I (Jake) like to think of `qid`s as similar to LLVM's modelling of virtual and CPU registers.
 > The analogy is not perfect, and do not assume that any unenumerated CPU-register semantics apply to `qid`, but it may help understand the spirit.
 
 #### Classical types
@@ -255,6 +261,8 @@ In all discussion here:
 
 The operations set includes:
 
+**TODO**: revisit all of these and decide whether each argument is part of the "custom" compile-time fixed data of the operation, or gets a type in the symbol table.
+
 - `pauli_measure` that takes a Pauli string and variadic `qid`s. Produces a bool representing the measurement outcome.
 
 - `pauli_rotate` that takes a Pauli string, an angle, and variadic `qid`s.  Produces nothing.
@@ -270,10 +278,15 @@ The operations set includes:
   *TODO*: define qubit-width semantics.
 
 - certain low-arity non-Clifford gates (e.g. `t`).
-- Same considerations on `qid` count and semantics as above.
+  Same considerations on `qid` count and semantics as above.
 
-- magic-state preparation / injection (*TODO*: detail - does it "produce" a `qid`? Do we have some concept of a "definer" for `qid`s?)
+- state preparation, which takes a variadic number of `qid`s and a "state" that they are reset to.
 
+- dynamic extension operation, which will be objects defined externally to the main IR definition (either in Qiskit or elsewhere), and the builr-in IR methods will only interact with via a fixed interface.
+  These are for extension types.
+
+Note: we are currently experimenting with particular forms of "predicated" instructions in particular pipelines.
+We are not currently in a place where we are confident on the representation or use, so will use the "dynamic operation" form to represent them at firts.
 
 
 ## Implementation Detail
