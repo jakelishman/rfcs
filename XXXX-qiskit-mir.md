@@ -4,7 +4,7 @@
 |:------------------|:---------------------------------------------|
 | **RFC #**         | #### |
 | **Authors**       | Jake Lishman (jake.lishman@ibm.com), Kit Barton (kbarton@ca.ibm.com) |
-| **Submitted**     | 2026-08-31 |
+| **Submitted**     | 2026-09-07 |
 
 
 ## Summary
@@ -33,7 +33,9 @@ Virtual addressing uses qubits, groups and connectivity defined inline in the IR
 The properties of each qubit and group in the physical-addressing mode will be communicated by an abstract interface implemented by backends.
 
 
-## Motivation
+## Setting and scope
+
+### Motivation
 
 Fault-tolerant compilation will have a different shape to NISQ-era compilation.
 Qiskit's existing representations are designed and optimised for gate-model computation.
@@ -42,7 +44,7 @@ Trying to evolve `QuantumCircuit`/`DAGCircuit` in place risks comprising their s
 Neither the ideal input forms nor the exact quantum-computer ISAs are precisely known yet, but we must begin trying to graduate individual research prototypes of components into research pipelines.
 The clearest required component right now is a middle-end representation that can be targeted by various high-level algorithm-implementation languages, then lowered to a variety of implementation-specific backends (e.g. a compiler to one particular bicycle ISA).
 
-### Detail on deficiencies in `QuantumCircuit`/`DAGCircuit`
+#### Detail on deficiencies in `QuantumCircuit`/`DAGCircuit`
 
 - There is no concept of "qubit grouping".
   We expect many FT backends to have instructions that "address" qubits in groups.
@@ -67,7 +69,7 @@ The clearest required component right now is a middle-end representation that ca
   Backend compilers have been known to be sensitive to the precise linearisation.
 
 
-## User Benefit
+### User benefit
 
 There are several user personas in mind, which have significant overlap in the general field of "compiler research" and "end user".
 Here we pull out a couple of the more separable parts:
@@ -85,8 +87,6 @@ Here we pull out a couple of the more separable parts:
   Most obviously: we need a platform for developing fault-tolerant compilers so users can access the hardware.
   These users benefit by us accelerating the work to get them access to the hardware.
 
-
-## Design Proposal
 
 ### Design principles
 
@@ -114,14 +114,14 @@ The associated pass-manager infrastructure and the specifics of particular pipel
 This design is an MVP.
 We expect significant future expansion after implementation.
 
-### IR semantics
+## IR semantics
 
 This is intended high-level semantics of what is representable in Qiskit MIR.
 We don't get into detail of _how_ to represent this yet, only what should be possible.
 
-#### IR structure
+### IR structure
 
-There are several top-level components to Qiskit MIR.
+let bytes = 12.5f64.to_ne_bytes();There are several top-level components to Qiskit MIR.
 These include:
 
 - **Instruction list**
@@ -147,33 +147,32 @@ We expect to add structured control flow over blocks later, but it is not design
 Some of the above structure may change when we introduce this.
 
 
-#### Instructions
+### Instructions
 
-An instruction tracks four explicit components:[^instruction-parts]
+An instruction stores four components:[^instruction-parts]
 
 - **operation**: compile-time fixed information about the action itself.
   This includes some representation of which family of op code (e.g. `pauli_rotation` vs `cx`),
   but may also include operation-specific compile-time fixed information specific to that operation.
 
-- **quantum arguments**: zero or more `qid`s, which the operation acts on.
-
-- **classical symbols**: the classical values the operation acts on.
-
-- **classical return**: optionally, the classical value(s) returned.
-
+- **quantum argument list**: a list of `qid`s that the operation acts on.[^separate-arg-lists]
+- **symbol argument list**: the non-`qid` arguments the operation takes.
+- **return value**: optionally, the value returned.[^multi-return]
 
 This section does not comment on the implementation of the instruction object, just on the concepts it permits representation of.
-The quantum arguments all follow "qubit semantics" (see next section), while the classical symbol uses and the return follow the semantics of the type of value the symbol refers to.
-In this first draft, the only classical types we define have value semantics.[^memory-semantics]
-
-**TODO**: if more stuff (like Pauli strings, state-prep state, etc) moves into the argument list, revisit the motivation for the quantum-arument/classical-symbol split.
+The quantum arguments all follow "qubit semantics" (see next section), while the symbol uses and the return follow the semantics of the type of value the symbol refers to.
+In this first draft, the only symbol types we define have value semantics.[^memory-semantics]
 
 [^instruction-parts]: We may want to add further metadata/annotations/whatever to individual instructions in the future.
 We need to make sure the implementation and APIs don't make this unnecessarily hard.
-[^memory-semantics]: This doesn't preclude us adding the concept of "arrays" or other references to memory in the future.
+[^separate-arg-lists]: It would also be a valid design to join the two argument lists and have `qid` be a type of symbol.
+Jake roughly prefers the separated form, Kit roughly prefers the joined form, but neither of us have much beyond "it just feels familiar" in mind.
+`QuantumCircuit` and `DAGCircuit`'s `Instruction`/`Gate` objects represent a complete "action" that is subsequently applied to "qubits", whereas it's unusual in most (non-quantum) compilers to separate out type of argument from another.
+Certainly in the near term, the `qid` argument list represents quite different semantics to anything in the "symbol" list, but that might not always be the case.
+[^memory-semantics]: This doesn't preclude us adding the concept of "arrays" or other references to memory in the future.(
 
 
-#### Quantum types
+### Quantum data model
 
 The quantum data model of Qiskit MIR is abstract, and designed to allow concrete high-level algorithmic languages and concrete backends to model their own semantics.
 
@@ -182,7 +181,7 @@ It allows multiple simultaneous representations of quantum memory, so high-level
 
 We introduce three terms:
 
-- **qid**: a "quantum identifier", which refers to zero or more qubits.
+- **qid**: a "quantum identifier".
   These are the operands of instructions.
 
 - **resource space**: each qid is part of exactly one resource space, and each resource space contains many qids.
@@ -191,19 +190,39 @@ We introduce three terms:
 
 - **qubit semantics**: the rules for how the underlying "quantum resources" can be modified/copied by instructions.[^qubit-semnatics]
 
-[^id-space-expansion]: Approximately, I'm expecting that we might introduce one to handle loops over qubits, or function calls that can be applied to different qubits without instantiating a new function per location.  You don't need this concept in classical computing, where one function call always has the same register uses, but the CPU-register–physical-qubit analogy doesn't hold here.
+[^id-space-expansion]: We might introduce new resource spaces to represent loops over qubits, or function calls that can be applied to different qubits without instantiating a new function per location.
+You don't need this concept in classical computing, where one function call always has the same register uses, but the CPU-register–physical-qubit analogy doesn't hold here.
 [^qubit-semantics]: We don't have a full formal specification of "qubit semantics"  yet, but it will follow.
 For now, approximately think of them as "a resource that each instruction can use at most once and cannot copy".
 
+#### Qids
+
 An "instruction" in Qiskit MIR takes zero or more `qid`s as arguments.
 A `qid` has an optional "qubit width"; this defines how the built-in Pauli instructions act on it.
-A `qid` can "contain" other `qid`s.
 "Qubit" is not an explicit data type in Qiskit MIR.
-A `qid` might directly represent a qubit or a set of qubits, however.
+A `qid` might directly represent a qubit or a set of qubits, but it is not necessary for the smallest addressable unit to be a qubit.
+Every entity in the quantum data model follows "qubit semantics"[^qubit-semantics].
+
+> [!NOTE]
+> Jake: I like to think of `qid`s as similar to LLVM's modelling of virtual and CPU registers.
+> The analogy is not perfect, and do not assume that any unenumerated CPU-register semantics apply to `qid`, but it may help understand the spirit.
 
 It is allowed and expected to have qubit overlap between different `qid`s used in the program; the set of "contained-in" relations between all `qid`s in the same resource space is an arbitrary DAG.
 This allows a backend to define a "module" (for example) that contains other qubits, and have instructions that act on the entire module as a single named entity.
 A Qiskit MIR program is invalid if any single instruction acts on two `qid`s that overlap.
+
+The "quantum memory table" of the IR holds information on which `qid`s share references to the same underlying quantum resources.
+A `qid` can "contain" other `qid`s.
+If all relevant `qid`s have qubit-width information stored, the "contains" relationship includes which qubit indices in the "parent" the "child" refers to.
+The complete set of "contains" relationships is an arbitrary DAG, where the nodes are `qid`s and the edges lead from container to contained.
+Two `qid`s overlap if any other `qid` is reachable from both in the "contains" DAG.
+
+For example, a bicycle-code hardware backend might allocate a `qid` per individual memory qubit, and a `qid` per complete module.
+Each module `qid` is marked in the memory table as "containing" each memory-qubit `qid`, at a specific qubit index.
+
+In order to fully define the data-flow analysis, it may be necessary to define "dummy" `qid`s in a particular memory table that are not valid instruction operands, but represent an overlap between two other `qid`s.
+
+#### Resource spaces
 
 There are two (initial) "resource spaces": virtual and physical.
 At any given time, a Qiskit MIR program can use a mix of virtual and physical resources.
@@ -215,31 +234,29 @@ This is tracked in the _quantum memory table_ as part of MIR.
 The "memory layout" of the physical resource space is a property of the target backend, not owned by an individual MIR program.
 The memory table for the physical resource space will likely use the same data structure as the physical one.
 
-*TODO*:
-- define the "contains-in" relations (e.g. bit layout?), how data-flow analysis is defined, and how "overlap" is defined.
 
+### Symbol types
 
-> [!NOTE]
-> I (Jake) like to think of `qid`s as similar to LLVM's modelling of virtual and CPU registers.
-> The analogy is not perfect, and do not assume that any unenumerated CPU-register semantics apply to `qid`, but it may help understand the spirit.
+Qiskit MIR comes with several built-in types.
+Each non-`qid` parameter in an instruction has one of these types.
 
-#### Classical types
+- **bool**: a Boolean.
+- **Pauli string**: a multi-qubit Pauli operator and phase (integer exponent of `-i`)
+- **quantum state**: the _value_ of a quantum state.
+  This is quite unlike `qid`s, which represent some underlying hardware resource (whether it's physical or virtual).
+  These are used in the (magic) state-preparation instructions.
 
-**TODO**:
+- **angle**: a representation of an angle.
+  This will store binary fractions of `pi` exactly.
 
-- bool
-- Pauli string?
-- compound?
+This list will certainly expand in the future.
 
-Note: still a question of whether to make "Pauli string" always a symbol/argument or whether to make it a built-in of the op code.
-We can always add "dynamic Pauli" variants later that take the Pauli string as an argument, allowing it to be a runtime symbol.
-Need to consider whether there's a _large_ immediate memory advantage to giving it a special place in the opcodes.
+Each of the types named above will come with efficient representations of corresponding literals.
 
-#### Available operations
+### Available operations
 
 The purpose of built-in operations is to provide re-usable components that have high memory efficiency and can be acted on with very low overhead.
 It must always be possible to have a "dynamic" operations that is defined by the runtime user of Qiskit MIR, to allow extension from outside Qiskit.
-We may, in the future, add a "middle" mechanism that allows more efficiency than the "full dynamic" form, but doesn't require the first-party integration of the built-in set.
 
 Not all pipelines will want to use all built-in operations.
 We want to define the set of operations that we expect to both have widespread applicability and be so common that they motivate high efficiency or centralised algorithms to deal with their semantics.
@@ -261,26 +278,33 @@ In all discussion here:
 
 The operations set includes:
 
-**TODO**: revisit all of these and decide whether each argument is part of the "custom" compile-time fixed data of the operation, or gets a type in the symbol table.
+- `pauli_measure` that takes a Pauli string and variadic `qid`s.
+  Returns a bool representing the measurement outcome.
 
-- `pauli_measure` that takes a Pauli string and variadic `qid`s. Produces a bool representing the measurement outcome.
+- `pauli_rotate` that takes a Pauli string, an angle, and variadic `qid`s.
+  Returns nothing.
 
-- `pauli_rotate` that takes a Pauli string, an angle, and variadic `qid`s.  Produces nothing.
+- `pauli_project` that takes a Pauli string, a bool, and variadic `qid`s.
+  Logically equivalent to `pauli_measure`, followed by a state flip if the measurement result does not match the Boolean argument.
+  Returns the result of the intermediate (implicit measurement).[^pauli-project-return]
 
-- `pauli_project` that takes a Pauli string, a bool, and variadic `qid`s.  Projects the qargs into the state that would produce the same Boolean if `pauli_measure` applied to it.
+- `pauli_correct` that takes a Pauli string and variadic `qid`s.
+  Equivalent to `pauli_rotate` with an angle of `pi` (and a global-phase correction).
+  Intended for representational efficiency.
 
-- `pauli_correct` that takes a Pauli string and variadic qargs.  Equivalent to `pauli_rotate` with an angle of `pi` (and a global-phase correction).  Intended for representational efficiency, and potentially as a target for "predicated operations".
-
-- `clifford_tableau` that takes some explicit Clifford tableau and variadic qargs.  Produces nothing.
+- `clifford_tableau` that takes some explicit Clifford tableau and variadic `qid`s.
+  Returns nothing.
 
 - various explicit low-arity explicit Clifford "gates" (c.f. the `stim` operations set).
   Each take a number of `qid`s equal to the arity of the gate.
-  *TODO*: define qubit-width semantics.
+  `qid`s arguments must have a set qubit width of 1.
+  Return nothing.
 
 - certain low-arity non-Clifford gates (e.g. `t`).
   Same considerations on `qid` count and semantics as above.
+  Return nothing.
 
-- state preparation, which takes a variadic number of `qid`s and a "state" that they are reset to.
+- state preparation, which takes a variadic number of `qid`s and the state that they are reset to.
 
 - dynamic extension operation, which will be objects defined externally to the main IR definition (either in Qiskit or elsewhere), and the builr-in IR methods will only interact with via a fixed interface.
   These are for extension types.
@@ -288,13 +312,21 @@ The operations set includes:
 Note: we are currently experimenting with particular forms of "predicated" instructions in particular pipelines.
 We are not currently in a place where we are confident on the representation or use, so will use the "dynamic operation" form to represent them at firts.
 
+[^pauli-project-return]: This does not require that all targets lower `pauli_project` to a literal measure followed by conditional flip, especially if the return value is unused.
 
-## Implementation Detail
 
-*TODO*: implementation sketch.
+#### Pauli-string operations
 
-## Alternative Approaches
+Operations that take Pauli strings must apply one string to (potentially) multiple `qid`s, where a single `qid` can have a qubit width greater than one.
+This requires choosing an "endianness" convention.[^endianness]
 
-## Questions
+Qiskit MIR uses a **little endian** convention.
+In an argument list of `qid`s, the zeroth indexed `qid` corresponds to the Pauli terms indexed `[0, width_0)` (where `width_0` is the bit width of the zeroth `qid`), and so on.
 
-## Future Extensions
+A Pauli instruction is not valid if any of its `qid`s do not have a specified bit width, or if the sum of the bit widths of the `qid`s is not equal to the length of the Pauli string.
+
+[^endianness]: It is common in the quantum-computing community to claim that pre-MIR Qiskit had a "little-endian" convention.
+This is at best somewhat misleading; pre-MIR Qiskit did not have an endianness convention because it did not previously have any concept of addressing multiple "groups" of qubits simultaneously.
+What was typically _meant_ is that Qiskit uses an Lsb0 labelling convention: if `n` qubits were measured into a register and read as an integer value, the bit from the measurement of "qubit 0" is the least significant bit of the value.
+All _strings_ were written in this order, including Pauli strings.
+Lists of arguments (like Rust `Vec`s, Python `list`s, or parameter lists) used index positions corresponing to qubit numbers.
