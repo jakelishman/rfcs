@@ -242,16 +242,19 @@ Each non-`qid` parameter in an instruction has one of these types.
 
 - **bool**: a Boolean.
 - **Pauli string**: a multi-qubit Pauli operator and phase (integer exponent of `-i`)
-- **quantum state**: the _value_ of a quantum state.
-  This is quite unlike `qid`s, which represent some underlying hardware resource (whether it's physical or virtual).
-  These are used in the (magic) state-preparation instructions.
-
 - **angle**: a representation of an angle.
   This will store binary fractions of `pi` exactly.
+
+- **quantum state**: the _value_ of a quantum state.
+  This is quite unlike `qid`s, which represent some underlying hardware resource (whether it's physical or virtual).
+  These are used in the (magic) state-preparation instructions.[^state-symbol]
 
 This list will certainly expand in the future.
 
 Each of the types named above will come with efficient representations of corresponding literals.
+
+[^state-symbol]: It is still an open question whether the "which state" tracking should be a compile-time attribute of the "state preparation" instruction, or a regular `Symbol` argument.
+
 
 ### Available operations
 
@@ -295,16 +298,23 @@ The operations set includes:
 - `clifford_tableau` that takes some explicit Clifford tableau and variadic `qid`s.
   Returns nothing.
 
-- various explicit low-arity explicit Clifford "gates" (c.f. the `stim` operations set).
+- various explicit low-arity explicit static Clifford "gates" (c.f. the `stim` operations set).
   Each take a number of `qid`s equal to the arity of the gate.
   `qid`s arguments must have a set qubit width of 1.
   Return nothing.
 
-- certain low-arity non-Clifford gates (e.g. `t`).
+- certain low-arity static non-Clifford gates (e.g. `t`).
+  Same considerations on `qid` count and semantics as above.
+  Return nothing.
+
+- various low-arity parametric gates (e.g. `rz`), which take the requisite number of angles.
   Same considerations on `qid` count and semantics as above.
   Return nothing.
 
 - state preparation, which takes a variadic number of `qid`s and the state that they are reset to.
+  It is an open question whether the state is a compile-time attribute or an argument.[^state-symbol]
+
+- various Boolean-manipulation instructions (e.g. `and`, `xor`), which take two bools and return a bool.
 
 - dynamic extension operation, which will be objects defined externally to the main IR definition (either in Qiskit or elsewhere), and the builr-in IR methods will only interact with via a fixed interface.
   These are for extension types.
