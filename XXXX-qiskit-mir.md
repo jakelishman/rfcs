@@ -121,7 +121,7 @@ We don't get into detail of _how_ to represent this yet, only what should be pos
 
 ### IR structure
 
-let bytes = 12.5f64.to_ne_bytes();There are several top-level components to Qiskit MIR.
+There are several top-level components to Qiskit MIR.
 These include:
 
 - **Instruction list**
