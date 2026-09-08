@@ -4,12 +4,12 @@
 |:------------------|:---------------------------------------------|
 | **RFC #**         | #### |
 | **Authors**       | Jake Lishman (jake.lishman@ibm.com), Kit Barton (kbarton@ca.ibm.com) |
-| **Submitted**     | 2026-09-07 |
+| **Submitted**     | 2026-09-08 |
 
 
 ## Summary
 
-Qiskit will introduce a new middle-end intermediate representation (IR) for fault-tolerant compilation.
+Qiskit will introduce a new middle-end intermediate representation (MIR) for fault-tolerant compilation.
 This will be one section of full-path compilation from high-level program description down to specific hardware.
 
 It will be the primary target for higher-level applications representations to lower to, both from inside and outside Qiskit.
@@ -129,11 +129,11 @@ These include:
   A linearisation of all the instructions in the circuit.
   It supports random access, efficient insertion and removal.
 
-- **Quantum memory table**.
+- **Quantum resource table**.
   MIR supports addressing both qubits and abstract groups (see [Quantum types](#quantum-types)).
 
   "Virtual" groups can be defined on-the-fly by passes as part of the IR, then used as single operands.
-  A quantum memory table records the overlaps of groups (approximately: which qubits are in which groups), and can contain custom metadata for each group.
+  A quantum resource table records the overlaps of groups (approximately: which qubits are in which groups), and can contain custom metadata for each group.
 
   We expect that one part of a future backend abstraction will be to provide a version of this table for the physical-qubit/-module layout.
 
@@ -211,16 +211,16 @@ It is allowed and expected to have qubit overlap between different `qid`s used i
 This allows a backend to define a "module" (for example) that contains other qubits, and have instructions that act on the entire module as a single named entity.
 A Qiskit MIR program is invalid if any single instruction acts on two `qid`s that overlap.
 
-The "quantum memory table" of the IR holds information on which `qid`s share references to the same underlying quantum resources.
+The "quantum resource table" of the IR holds information on which `qid`s share references to the same underlying quantum resources.
 A `qid` can "contain" other `qid`s.
 If all relevant `qid`s have qubit-width information stored, the "contains" relationship includes which qubit indices in the "parent" the "child" refers to.
 The complete set of "contains" relationships is an arbitrary DAG, where the nodes are `qid`s and the edges lead from container to contained.
 Two `qid`s overlap if any other `qid` is reachable from both in the "contains" DAG.
 
 For example, a bicycle-code hardware backend might allocate a `qid` per individual memory qubit, and a `qid` per complete module.
-Each module `qid` is marked in the memory table as "containing" each memory-qubit `qid`, at a specific qubit index.
+Each module `qid` is marked in the resource table as "containing" each memory-qubit `qid`, at a specific qubit index.
 
-In order to fully define the data-flow analysis, it may be necessary to define "dummy" `qid`s in a particular memory table that are not valid instruction operands, but represent an overlap between two other `qid`s.
+In order to fully define the data-flow analysis, it may be necessary to define "dummy" `qid`s in a particular resource table that are not valid instruction operands, but represent an overlap between two other `qid`s.
 
 #### Resource spaces
 
@@ -229,10 +229,10 @@ At any given time, a Qiskit MIR program can use a mix of virtual and physical re
 An individual instruction may have a mix of virtual and physical operands.
 
 The "memory layout" of the virtual resource space is a property of the IR, and transformations are allowed to add to it, including "adding" new qubits and groups.
-This is tracked in the _quantum memory table_ as part of MIR.
+This is tracked in the _quantum resource table_ as part of MIR.
 
 The "memory layout" of the physical resource space is a property of the target backend, not owned by an individual MIR program.
-The memory table for the physical resource space will likely use the same data structure as the physical one.
+The resource table for the physical resource space will likely use the same data structure as the physical one.
 
 
 ### Symbol types
@@ -248,6 +248,7 @@ Each non-`qid` parameter in an instruction has one of these types.
 - **quantum state**: the _value_ of a quantum state.
   This is quite unlike `qid`s, which represent some underlying hardware resource (whether it's physical or virtual).
   These are used in the (magic) state-preparation instructions.[^state-symbol]
+  These may need to be parametric in some form, to leave open the possibility of (e.g.) `rz(theta)` injection.
 
 This list will certainly expand in the future.
 
@@ -276,8 +277,9 @@ In all discussion here:
 - "arity" means the number of arguments the operations needs.
   We're primarily concerned with the arity of `qid`s and of the implied qubits.
 
-- "variadic" means a list of length that isn't fixed per operations.
-  For example, `pauli_measure` with a 12-qubit Pauli string might take 12 `qid`s of single qubits, or 1 `qid` of a 12-qubit group.
+- "variadic" means a list of length that isn't fixed by the op code itself.
+  For example, `pauli_measure` with a 12-qubit Pauli string might act on 12 `qid`s of single qubits, or 1 `qid` of a 12-qubit group.
+  The number of `qid`s in any given instance of an instruction is known at compile-time; there's no such thing as a runtime list of `qid` in MIR.
 
 The operations set includes:
 
@@ -298,7 +300,7 @@ The operations set includes:
 - `clifford_tableau` that takes some explicit Clifford tableau and variadic `qid`s.
   Returns nothing.
 
-- various explicit low-arity explicit static Clifford "gates" (c.f. the `stim` operations set).
+- various explicit low-arity static Clifford "gates" (c.f. [the `stim` operation set](https://github.com/quantumlib/Stim/blob/79ae4f118ca11c615d6d8de7c6eed7d189d3a6eb/doc/gates.md)).
   Each take a number of `qid`s equal to the arity of the gate.
   `qid`s arguments must have a set qubit width of 1.
   Return nothing.
@@ -320,7 +322,7 @@ The operations set includes:
   These are for extension types.
 
 Note: we are currently experimenting with particular forms of "predicated" instructions in particular pipelines.
-We are not currently in a place where we are confident on the representation or use, so will use the "dynamic operation" form to represent them at firts.
+We are not currently in a place where we are confident on the representation or use, so will use the "dynamic operation" form to represent them at first.
 
 [^pauli-project-return]: This does not require that all targets lower `pauli_project` to a literal measure followed by conditional flip, especially if the return value is unused.
 
