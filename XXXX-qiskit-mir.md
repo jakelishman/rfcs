@@ -163,6 +163,10 @@ This section does not comment on the implementation of the instruction object, j
 The quantum arguments all follow "qubit semantics" (see next section), while the symbol uses and the return follow the semantics of the type of value the symbol refers to.
 In this first draft, the only symbol types we define have value semantics.[^memory-semantics]
 
+Qiskit MIR does not enforce SSA form.
+Without control flow present, Qiskit MIR can be put into an SSA form (with the `qid` system treated as an extension).
+When control flow is added, we will consider then whether to add the necessary phi nodes to continue to allow SSA form.
+
 [^instruction-parts]: We may want to add further metadata/annotations/whatever to individual instructions in the future.
 We need to make sure the implementation and APIs don't make this unnecessarily hard.
 [^separate-arg-lists]: It would also be a valid design to join the two argument lists and have `qid` be a type of symbol.
